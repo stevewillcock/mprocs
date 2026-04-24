@@ -102,6 +102,8 @@ pub fn render_procs(
         Cow::from(" UP "),
         attrs.clone().set_bold(true).fg(Color::BRIGHT_GREEN),
       )
+    } else if proc.last_start.is_none() {
+      (Cow::from(" IDLE "), attrs.clone())
     } else {
       match proc.exit_code() {
         Some(0) => {
