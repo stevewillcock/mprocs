@@ -145,7 +145,7 @@ pub fn render_procs(
       let text = if info.comm.is_empty() {
         format!("    :{} [{}]", info.port, info.pid)
       } else {
-        format!("    :{} {}[{}]", info.port, info.comm, info.pid)
+        format!("    :{} {} [{}]", info.port, info.comm, info.pid)
       };
       let r = grid.draw_text(port_row, &text, port_attrs);
       let remainder = Rect {
