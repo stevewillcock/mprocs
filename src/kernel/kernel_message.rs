@@ -10,7 +10,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::term::Parser;
 
-use super::task::{Task, TaskCmd, TaskDef, TaskId, TaskStatus};
+use super::task::{PortInfo, Task, TaskCmd, TaskDef, TaskId, TaskStatus};
 use super::task_path::TaskPath;
 
 pub struct KernelMessage {
@@ -45,7 +45,7 @@ pub enum KernelCommand {
   TaskStarted,
   TaskStopped(u32),
   TaskUpdatedScreen(Option<SharedVt>),
-  TaskUpdatedPorts(Vec<u16>),
+  TaskUpdatedPorts(Vec<PortInfo>),
   TaskRendered,
 }
 

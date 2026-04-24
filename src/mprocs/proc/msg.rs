@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-  kernel::kernel_message::SharedVt,
+  kernel::{kernel_message::SharedVt, task::PortInfo},
   term::{key::Key, mouse::MouseEvent},
 };
 
@@ -23,5 +23,5 @@ pub enum ProcEvent {
   Exited(u32),
   Started,
   SetVt(Option<SharedVt>),
-  PortsUpdated(Vec<u16>),
+  PortsUpdated(Vec<PortInfo>),
 }

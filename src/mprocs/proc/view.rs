@@ -1,4 +1,7 @@
-use crate::kernel::{kernel_message::SharedVt, task::TaskId};
+use crate::kernel::{
+  kernel_message::SharedVt,
+  task::{PortInfo, TaskId},
+};
 use crate::mprocs::config::ProcConfig;
 
 use super::CopyMode;
@@ -23,7 +26,7 @@ pub struct ProcView {
   pub exit_code: Option<u32>,
   pub vt: Option<SharedVt>,
   pub copy_mode: CopyMode,
-  pub listening_ports: Vec<u16>,
+  pub listening_ports: Vec<PortInfo>,
 
   pub target_state: TargetState,
   pub last_start: Option<Instant>,

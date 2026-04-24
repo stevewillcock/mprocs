@@ -4,27 +4,62 @@
 //! by the `LinuxProcess` backend) so the cgroup is the authoritative set of
 //! "everything this proc owns", including processes that have daemonized and
 //! been reparented to the user manager (conmon, etc). For each pid in the
-//! cgroup we enumerate `/proc/<pid>/fd` and collect socket inodes, then
-//! match those against LISTEN rows of `/proc/net/tcp{,6}`.
+//! cgroup we enumerate `/proc/<pid>/fd` and collect socket inodes (mapped
+//! back to the owning pid), then match those against LISTEN rows of
+//! `/proc/net/tcp{,6}` to produce `PortInfo` entries (port, pid, comm).
+
+use crate::kernel::task::PortInfo;
 
 #[cfg(target_os = "linux")]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(target_os = "linux")]
 const FD_READLINK_BUDGET: usize = 10_000;
 
 #[cfg(target_os = "linux")]
-pub fn scan_listening_ports(root_pid: u32) -> Vec<u16> {
+pub fn scan_listening_ports(root_pid: u32) -> Vec<PortInfo> {
   let pids = pids_in_cgroup(root_pid);
-  let inodes = socket_inodes_for_pids(&pids);
-  if inodes.is_empty() {
+  let inode_to_pid = inode_to_pid_map(&pids);
+  if inode_to_pid.is_empty() {
     return Vec::new();
   }
-  listening_ports_for_inodes(&inodes)
+  let listeners = listeners_for_inodes(&inode_to_pid);
+  let mut comm_cache: HashMap<u32, String> = HashMap::new();
+  let mut result: Vec<PortInfo> = listeners
+    .into_iter()
+    .map(|(inode, port)| {
+      let pid = inode_to_pid[&inode];
+      let comm = comm_cache
+        .entry(pid)
+        .or_insert_with(|| read_comm(pid))
+        .clone();
+      PortInfo { port, pid, comm }
+    })
+    .collect();
+
+  // Rootless podman binds via a helper named "rootlessport" that holds the
+  // host-side socket; the useful identity is the container it proxies for.
+  // Call `podman ps` at most once per scan, then rewrite matching ports.
+  if result.iter().any(|p| p.comm == "rootlessport") {
+    let pmap = podman_port_map();
+    if !pmap.is_empty() {
+      for info in result.iter_mut() {
+        if info.comm == "rootlessport" {
+          if let Some(name) = pmap.get(&info.port) {
+            info.comm = name.clone();
+          }
+        }
+      }
+    }
+  }
+
+  result.sort_unstable_by(|a, b| (a.port, a.pid).cmp(&(b.port, b.pid)));
+  result.dedup();
+  result
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn scan_listening_ports(_root_pid: u32) -> Vec<u16> {
+pub fn scan_listening_ports(_root_pid: u32) -> Vec<PortInfo> {
   Vec::new()
 }
 
@@ -61,10 +96,10 @@ fn read_cgroup_path(pid: u32) -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-fn socket_inodes_for_pids(pids: &HashSet<u32>) -> HashSet<u64> {
-  let mut inodes = HashSet::new();
+fn inode_to_pid_map(pids: &HashSet<u32>) -> HashMap<u64, u32> {
+  let mut inodes: HashMap<u64, u32> = HashMap::new();
   let mut budget = FD_READLINK_BUDGET;
-  'outer: for pid in pids {
+  'outer: for &pid in pids {
     let fd_dir = format!("/proc/{}/fd", pid);
     let entries = match std::fs::read_dir(&fd_dir) {
       Ok(e) => e,
@@ -87,7 +122,9 @@ fn socket_inodes_for_pids(pids: &HashSet<u32>) -> HashSet<u64> {
       if let Some(rest) = s.strip_prefix("socket:[") {
         if let Some(inode_str) = rest.strip_suffix(']') {
           if let Ok(inode) = inode_str.parse::<u64>() {
-            inodes.insert(inode);
+            // First pid wins; shared inodes (e.g. inherited via fork) are
+            // rare here and attribution by first-seen is good enough.
+            inodes.entry(inode).or_insert(pid);
           }
         }
       }
@@ -97,9 +134,11 @@ fn socket_inodes_for_pids(pids: &HashSet<u32>) -> HashSet<u64> {
 }
 
 #[cfg(target_os = "linux")]
-fn listening_ports_for_inodes(inodes: &HashSet<u64>) -> Vec<u16> {
+fn listeners_for_inodes(
+  inodes: &HashMap<u64, u32>,
+) -> Vec<(u64, u16)> {
   const LISTEN: &str = "0A";
-  let mut ports = Vec::new();
+  let mut out = Vec::new();
   for path in ["/proc/net/tcp", "/proc/net/tcp6"] {
     let contents = match std::fs::read_to_string(path) {
       Ok(c) => c,
@@ -122,19 +161,66 @@ fn listening_ports_for_inodes(inodes: &HashSet<u64>) -> Vec<u16> {
       let Ok(inode) = inode_str.parse::<u64>() else {
         continue;
       };
-      if !inodes.contains(&inode) {
+      if !inodes.contains_key(&inode) {
         continue;
       }
       if let Some((_, port_hex)) = local.rsplit_once(':') {
         if let Ok(port) = u16::from_str_radix(port_hex, 16) {
-          ports.push(port);
+          out.push((inode, port));
         }
       }
     }
   }
-  ports.sort_unstable();
-  ports.dedup();
-  ports
+  out
+}
+
+#[cfg(target_os = "linux")]
+fn read_comm(pid: u32) -> String {
+  match std::fs::read_to_string(format!("/proc/{}/comm", pid)) {
+    Ok(s) => s.trim_end_matches('\n').to_string(),
+    Err(_) => String::new(),
+  }
+}
+
+/// Shell out to `podman ps` once and build a host-port → container-name map.
+/// Empty result on any failure (podman missing, daemon issue, parse error),
+/// which leaves rootlessport entries untouched and falls back to the bare
+/// `rootlessport` label.
+#[cfg(target_os = "linux")]
+fn podman_port_map() -> HashMap<u16, String> {
+  let mut map = HashMap::new();
+  let output = match std::process::Command::new("podman")
+    .args(["ps", "--format", "{{.Names}}\t{{.Ports}}"])
+    .output()
+  {
+    Ok(o) if o.status.success() => o,
+    _ => return map,
+  };
+  let text = match std::str::from_utf8(&output.stdout) {
+    Ok(t) => t,
+    Err(_) => return map,
+  };
+  for line in text.lines() {
+    let mut parts = line.splitn(2, '\t');
+    let name = match parts.next() {
+      Some(n) if !n.is_empty() => n,
+      _ => continue,
+    };
+    let ports_str = parts.next().unwrap_or("");
+    // Ports format: "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp" (comma-sep).
+    // We want the host port, which is the digits immediately left of "->".
+    for entry in ports_str.split(',').map(|s| s.trim()) {
+      let Some((hostpart, _)) = entry.split_once("->") else {
+        continue;
+      };
+      let host_port_str =
+        hostpart.rsplit_once(':').map_or(hostpart, |(_, p)| p);
+      if let Ok(port) = host_port_str.parse::<u16>() {
+        map.insert(port, name.to_string());
+      }
+    }
+  }
+  map
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -146,11 +232,10 @@ mod tests {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let found = scan_listening_ports(std::process::id());
-    assert!(
-      found.contains(&port),
-      "expected {} in {:?}",
-      port,
-      found
-    );
+    let entry = found.iter().find(|p| p.port == port);
+    assert!(entry.is_some(), "expected port {} in {:?}", port, found);
+    let entry = entry.unwrap();
+    assert_eq!(entry.pid, std::process::id());
+    assert!(!entry.comm.is_empty(), "expected non-empty comm");
   }
 }

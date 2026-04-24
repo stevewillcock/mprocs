@@ -15,11 +15,18 @@ pub trait Task: Send + 'static {
   fn handle_cmd(&mut self, cmd: TaskCmd, fx: &mut Effects);
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PortInfo {
+  pub port: u16,
+  pub pid: u32,
+  pub comm: String,
+}
+
 pub enum TaskEffect {
   Started,
   Stopped(u32),
   UpdatedScreen(Option<SharedVt>),
-  PortsChanged(Vec<u16>),
+  PortsChanged(Vec<PortInfo>),
   Rendered,
   Remove,
 }
@@ -43,7 +50,7 @@ impl Effects {
     self.0.push(TaskEffect::UpdatedScreen(vt));
   }
 
-  pub fn ports_changed(&mut self, ports: Vec<u16>) {
+  pub fn ports_changed(&mut self, ports: Vec<PortInfo>) {
     self.0.push(TaskEffect::PortsChanged(ports));
   }
 
@@ -96,7 +103,7 @@ pub enum TaskNotify {
   Stopped(u32),
   Rendered,
   ScreenChanged(Option<SharedVt>),
-  PortsChanged(Vec<u16>),
+  PortsChanged(Vec<PortInfo>),
   Removed,
 }
 

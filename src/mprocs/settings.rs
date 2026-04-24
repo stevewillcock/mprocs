@@ -35,7 +35,7 @@ impl Default for Settings {
       hide_keymap_window: false,
       mouse_scroll_speed: 5,
       scrollback_len: 1000,
-      proc_list_width: 30,
+      proc_list_width: 40,
       proc_list_title: "Processes".to_string(),
       on_all_finished: None,
       proc_log: None,

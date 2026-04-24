@@ -7,7 +7,7 @@ use tokio::time::MissedTickBehavior;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::SharedVt;
-use crate::kernel::task::TaskId;
+use crate::kernel::task::{PortInfo, TaskId};
 use crate::mprocs::proc_log_config::{LogConfig, LogMode};
 use crate::process::process::Process as _;
 use crate::process::process_spec::ProcessSpec;
@@ -144,7 +144,7 @@ impl Inst {
       Some(tokio::spawn(async move {
         let mut timer = tokio::time::interval(PORT_SCAN_INTERVAL);
         timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        let mut last: Vec<u16> = Vec::new();
+        let mut last: Vec<PortInfo> = Vec::new();
         loop {
           timer.tick().await;
           let ports = tokio::task::spawn_blocking(move || {

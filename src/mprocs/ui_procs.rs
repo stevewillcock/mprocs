@@ -130,7 +130,7 @@ pub fn render_procs(
     y += 1;
 
     let port_attrs = attrs.clone().fg(Color::BRIGHT_YELLOW);
-    for port in &proc.listening_ports {
+    for info in &proc.listening_ports {
       if y >= bottom {
         break 'procs;
       }
@@ -140,7 +140,11 @@ pub fn render_procs(
         width: inner_width,
         height: 1,
       };
-      let text = format!("    :{}", port);
+      let text = if info.comm.is_empty() {
+        format!("    :{} [{}]", info.port, info.pid)
+      } else {
+        format!("    :{} {}[{}]", info.port, info.comm, info.pid)
+      };
       let r = grid.draw_text(port_row, &text, port_attrs);
       let remainder = Rect {
         x: port_row.x + r.width,
