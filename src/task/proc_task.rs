@@ -186,7 +186,7 @@ fn spawn_native(
 
   #[cfg(unix)]
   {
-    Ok(crate::process::unix_process::UnixProcess::spawn(
+    Ok(crate::process::NativeProcess::spawn(
       ctx.task_id,
       spec,
       size,

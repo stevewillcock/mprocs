@@ -179,7 +179,9 @@ async fn proc_main_loop(
         }
       }
       NextValue::Read(Err(e)) => {
-        log::error!("Process read() error: {}", e);
+        // EIO on a PTY master is the normal "child closed the slave" signal
+        // on Linux, not a fault. Log at debug to avoid polluting mprocs.log.
+        log::debug!("Process read() error: {}", e);
         match &mut proc.inst {
           ProcState::Some(inst) => {
             inst.stdout_eof = true;
@@ -385,8 +387,8 @@ impl Proc {
 
   #[cfg(not(windows))]
   fn send_signal(&mut self, sig: libc::c_int) {
-    if let ProcState::Some(inst) = &self.inst {
-      unsafe { libc::kill(inst.pid as i32, sig) };
+    if let ProcState::Some(inst) = &mut self.inst {
+      inst.process.send_signal(sig).log_ignore();
     }
   }
 

@@ -51,7 +51,7 @@ impl Inst {
 
     #[cfg(unix)]
     let process = {
-      crate::process::unix_process::UnixProcess::spawn(
+      crate::process::NativeProcess::spawn(
         id,
         spec,
         Winsize {
