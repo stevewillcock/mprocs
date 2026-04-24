@@ -126,6 +126,7 @@ async fn proc_main_loop(
         ProcEvent::Exited(exit_code) => {
           proc.handle_exited(exit_code);
           if !proc.is_up() {
+            ks.send(KernelCommand::TaskUpdatedPorts(Vec::new()));
             ks.send(KernelCommand::TaskStopped(exit_code));
           }
         }
@@ -134,6 +135,9 @@ async fn proc_main_loop(
         }
         ProcEvent::SetVt(vt) => {
           ks.send(KernelCommand::TaskUpdatedScreen(vt));
+        }
+        ProcEvent::PortsUpdated(ports) => {
+          ks.send(KernelCommand::TaskUpdatedPorts(ports));
         }
       },
       NextValue::Internal(None) => (),

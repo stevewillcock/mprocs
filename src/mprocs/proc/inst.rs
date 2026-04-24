@@ -1,6 +1,9 @@
 use std::fmt::Debug;
+use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::task::JoinHandle;
+use tokio::time::MissedTickBehavior;
 
 use crate::error::ResultLogger;
 use crate::kernel::kernel_message::SharedVt;
@@ -12,7 +15,10 @@ use crate::process::NativeProcess;
 use crate::term::Winsize;
 
 use super::msg::ProcEvent;
+use super::ports::scan_listening_ports;
 use super::Size;
+
+const PORT_SCAN_INTERVAL: Duration = Duration::from_secs(2);
 
 pub struct Inst {
   pub vt: SharedVt,
@@ -22,6 +28,16 @@ pub struct Inst {
   pub process: NativeProcess,
   pub exit_code: Option<u32>,
   pub stdout_eof: bool,
+
+  ports_scanner: Option<JoinHandle<()>>,
+}
+
+impl Drop for Inst {
+  fn drop(&mut self) {
+    if let Some(handle) = self.ports_scanner.take() {
+      handle.abort();
+    }
+  }
 }
 
 impl Debug for Inst {
@@ -122,14 +138,40 @@ impl Inst {
 
     tx.send(ProcEvent::Started).log_ignore();
 
+    let pid_u32 = pid as u32;
+    let ports_scanner = {
+      let tx = tx.clone();
+      Some(tokio::spawn(async move {
+        let mut timer = tokio::time::interval(PORT_SCAN_INTERVAL);
+        timer.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut last: Vec<u16> = Vec::new();
+        loop {
+          timer.tick().await;
+          let ports = tokio::task::spawn_blocking(move || {
+            scan_listening_ports(pid_u32)
+          })
+          .await
+          .unwrap_or_default();
+          if ports != last {
+            if tx.send(ProcEvent::PortsUpdated(ports.clone())).is_err() {
+              break;
+            }
+            last = ports;
+          }
+        }
+      }))
+    };
+
     let inst = Inst {
       vt,
       log_writer,
 
       process,
-      pid: pid as u32,
+      pid: pid_u32,
       exit_code: None,
       stdout_eof: false,
+
+      ports_scanner,
     };
     Ok(inst)
   }

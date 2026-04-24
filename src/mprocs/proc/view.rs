@@ -23,6 +23,7 @@ pub struct ProcView {
   pub exit_code: Option<u32>,
   pub vt: Option<SharedVt>,
   pub copy_mode: CopyMode,
+  pub listening_ports: Vec<u16>,
 
   pub target_state: TargetState,
   pub last_start: Option<Instant>,
@@ -39,6 +40,7 @@ impl ProcView {
       exit_code: None,
       vt: None,
       copy_mode: CopyMode::None(None),
+      listening_ports: Vec::new(),
 
       target_state: TargetState::None,
       last_start: None,

@@ -1045,6 +1045,14 @@ impl App {
           loop_action.render();
         }
       }
+      TaskNotify::PortsChanged(ports) => {
+        if let Some(proc) = self.state.get_proc_mut(task_id) {
+          if proc.listening_ports != ports {
+            proc.listening_ports = ports;
+            loop_action.render();
+          }
+        }
+      }
       TaskNotify::Rendered => {
         let is_current = self
           .state

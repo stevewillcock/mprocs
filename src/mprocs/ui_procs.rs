@@ -62,24 +62,30 @@ pub fn render_procs(
     );
   }
 
-  let range = state.procs_list.visible_range();
-  for (row, index) in range.enumerate() {
-    let proc = if let Some(proc) = state.procs.get(index) {
-      proc
-    } else {
-      continue;
+  let inner_x = area.x + 1;
+  let inner_width = area.width.saturating_sub(2);
+  let bottom = area.y + area.height.saturating_sub(1);
+  let mut y = area.y + 1;
+
+  'procs: for index in state.procs_list.visible_range() {
+    if y >= bottom {
+      break;
+    }
+    let proc = match state.procs.get(index) {
+      Some(p) => p,
+      None => continue,
     };
 
     let selected = index == state.selected();
     let attrs = if selected {
-      Attrs::default().bg(crate::term::Color::Idx(240))
+      Attrs::default().bg(Color::Idx(240))
     } else {
       Attrs::default()
     };
-    let mut row_area = crate::term::grid::Rect {
-      x: area.x + 1,
-      y: area.y + 1 + row as u16,
-      width: area.width.saturating_sub(2),
+    let mut row_area = Rect {
+      x: inner_x,
+      y,
+      width: inner_width,
       height: 1,
     };
 
@@ -121,6 +127,29 @@ pub fn render_procs(
     row_area.width = row_area.width.saturating_sub(r.width);
 
     grid.fill_area(row_area, ' ', attrs);
+    y += 1;
+
+    let port_attrs = attrs.clone().fg(Color::BRIGHT_YELLOW);
+    for port in &proc.listening_ports {
+      if y >= bottom {
+        break 'procs;
+      }
+      let port_row = Rect {
+        x: inner_x,
+        y,
+        width: inner_width,
+        height: 1,
+      };
+      let text = format!("    :{}", port);
+      let r = grid.draw_text(port_row, &text, port_attrs);
+      let remainder = Rect {
+        x: port_row.x + r.width,
+        width: port_row.width.saturating_sub(r.width),
+        ..port_row
+      };
+      grid.fill_area(remainder, ' ', attrs);
+      y += 1;
+    }
   }
 }
 
@@ -130,14 +159,23 @@ pub fn procs_get_clicked_index(
   y: u16,
   state: &State,
 ) -> Option<usize> {
+  if !procs_check_hit(area, x, y) {
+    return None;
+  }
   let inner = area.inner(1);
-  if procs_check_hit(area, x, y) {
-    let index = y - inner.y;
-    let scroll = (state.selected() + 1).saturating_sub(inner.height as usize);
-    let index = index as usize + scroll;
-    if index < state.procs.len() {
+  let bottom = inner.y + inner.height;
+  let mut row_y = inner.y;
+  for index in state.procs_list.visible_range() {
+    if row_y >= bottom {
+      break;
+    }
+    let proc = state.procs.get(index)?;
+    let block_rows = 1 + proc.listening_ports.len() as u16;
+    let block_end = (row_y + block_rows).min(bottom);
+    if y >= row_y && y < block_end {
       return Some(index);
     }
+    row_y = block_end;
   }
   None
 }

@@ -23,4 +23,5 @@ pub enum ProcEvent {
   Exited(u32),
   Started,
   SetVt(Option<SharedVt>),
+  PortsUpdated(Vec<u16>),
 }

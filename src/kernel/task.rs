@@ -19,6 +19,7 @@ pub enum TaskEffect {
   Started,
   Stopped(u32),
   UpdatedScreen(Option<SharedVt>),
+  PortsChanged(Vec<u16>),
   Rendered,
   Remove,
 }
@@ -40,6 +41,10 @@ impl Effects {
 
   pub fn updated_screen(&mut self, vt: Option<SharedVt>) {
     self.0.push(TaskEffect::UpdatedScreen(vt));
+  }
+
+  pub fn ports_changed(&mut self, ports: Vec<u16>) {
+    self.0.push(TaskEffect::PortsChanged(ports));
   }
 
   pub fn rendered(&mut self) {
@@ -91,6 +96,7 @@ pub enum TaskNotify {
   Stopped(u32),
   Rendered,
   ScreenChanged(Option<SharedVt>),
+  PortsChanged(Vec<u16>),
   Removed,
 }
 
@@ -104,6 +110,9 @@ impl fmt::Debug for TaskNotify {
       TaskNotify::Stopped(code) => write!(f, "Stopped({})", code),
       TaskNotify::Rendered => write!(f, "Rendered"),
       TaskNotify::ScreenChanged(_) => write!(f, "ScreenChanged(...)"),
+      TaskNotify::PortsChanged(ports) => {
+        write!(f, "PortsChanged({:?})", ports)
+      }
       TaskNotify::Removed => write!(f, "Removed"),
     }
   }

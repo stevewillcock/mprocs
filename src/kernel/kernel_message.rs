@@ -45,6 +45,7 @@ pub enum KernelCommand {
   TaskStarted,
   TaskStopped(u32),
   TaskUpdatedScreen(Option<SharedVt>),
+  TaskUpdatedPorts(Vec<u16>),
   TaskRendered,
 }
 

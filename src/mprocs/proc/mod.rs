@@ -1,5 +1,6 @@
 mod inst;
 pub mod msg;
+pub mod ports;
 pub mod proc;
 pub mod view;
 

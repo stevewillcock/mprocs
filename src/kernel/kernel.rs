@@ -250,6 +250,9 @@ impl Kernel {
         KernelCommand::TaskUpdatedScreen(vt) => {
           self.apply_effect(msg.from, TaskEffect::UpdatedScreen(vt));
         }
+        KernelCommand::TaskUpdatedPorts(ports) => {
+          self.apply_effect(msg.from, TaskEffect::PortsChanged(ports));
+        }
         KernelCommand::TaskRendered => {
           self.apply_effect(msg.from, TaskEffect::Rendered);
         }
@@ -333,6 +336,10 @@ impl Kernel {
           task.vt = vt.clone();
         }
         self.notify_listeners(task_id, TaskNotify::ScreenChanged(vt));
+      }
+
+      TaskEffect::PortsChanged(ports) => {
+        self.notify_listeners(task_id, TaskNotify::PortsChanged(ports));
       }
 
       TaskEffect::Rendered => {
