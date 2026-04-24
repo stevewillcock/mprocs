@@ -208,14 +208,21 @@ fn podman_port_map() -> HashMap<u16, String> {
     };
     let ports_str = parts.next().unwrap_or("");
     // Ports format: "0.0.0.0:8080->80/tcp, [::]:8080->80/tcp" (comma-sep).
-    // We want the host port, which is the digits immediately left of "->".
+    // Host port can also be a range: "0.0.0.0:4317-4318->18889-18890/tcp".
+    // We extract the digits immediately left of "->" (single or range).
     for entry in ports_str.split(',').map(|s| s.trim()) {
       let Some((hostpart, _)) = entry.split_once("->") else {
         continue;
       };
       let host_port_str =
         hostpart.rsplit_once(':').map_or(hostpart, |(_, p)| p);
-      if let Ok(port) = host_port_str.parse::<u16>() {
+      if let Some((start, end)) = host_port_str.split_once('-') {
+        if let (Ok(s), Ok(e)) = (start.parse::<u16>(), end.parse::<u16>()) {
+          for port in s..=e {
+            map.insert(port, name.to_string());
+          }
+        }
+      } else if let Ok(port) = host_port_str.parse::<u16>() {
         map.insert(port, name.to_string());
       }
     }
